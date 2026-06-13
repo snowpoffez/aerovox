@@ -101,22 +101,61 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
   const estToThr = distM(planeLat, planeLon, threshold.lat, threshold.lon)
   const speed = speedForDist(estToThr)
   const stepM = speed * SIM_DT
-  const maxSteps = 1000
+  const maxSteps = 1200
 
-  // --- PART 1: TRACE BACKWARD FROM THE FAF JOINT ---
-  // Determine which side the plane is on relative to the runway centerline to curve outward correctly
-  const bearingToFAF = calcBearing(planeLat, planeLon, faf.lat, faf.lon)
-  const centerlineAngleDiff = ((runway.hdg - bearingToFAF + 540) % 360) - 180
-  const backTurnDir = centerlineAngleDiff >= 0 ? 1 : -1
+  const brgToFAF = calcBearing(planeLat, planeLon, faf.lat, faf.lon)
+  const hdgToFAFMisalignment = Math.abs(((planeHdg - brgToFAF + 540) % 360) - 180)
+  const entryAngleMisalignment = Math.abs(((runway.hdg - planeHdg + 540) % 360) - 180)
 
+  // --- SHORT-CIRCUIT PROFILE: DIRECT STREAM INJECTION ---
+  if (hdgToFAFMisalignment < 40 && entryAngleMisalignment < 70) {
+    const directTrack = []
+    let fLat = planeLat
+    let fLon = planeLon
+    let fHdg = planeHdg
+
+    for (let f = 0; f < maxSteps; f++) {
+      directTrack.push({ lat: fLat, lon: fLon })
+      
+      const currentBrgToFAF = calcBearing(fLat, fLon, faf.lat, faf.lon)
+      const currentDistToFAF = distM(fLat, fLon, faf.lat, faf.lon)
+
+      if (currentDistToFAF <= stepM * 1.5) {
+        directTrack.push({ lat: faf.lat, lon: faf.lon })
+        break
+      }
+
+      const steerDiff = ((currentBrgToFAF - fHdg + 540) % 360) - 180
+      const maxTurn = SIM_TURN_RATE_DEG_S * SIM_DT
+      const hdgApply = Math.sign(steerDiff) * Math.min(Math.abs(steerDiff), maxTurn)
+      fHdg = (fHdg + hdgApply + 360) % 360
+
+      const nextPos = movePos(fLat, fLon, fHdg, stepM)
+      fLat = nextPos.lat
+      fLon = nextPos.lon
+    }
+
+    const centerlineLine = [[faf.lat, faf.lon], [runway.tLat, runway.tLon]]
+    const clLinePts = packageCenterline(faf, threshold, runway.hdg, stepM)
+    return { allWPs: [...directTrack, ...clLinePts], curveLine: directTrack.map(p => [p.lat, p.lon]), centerlineLine }
+  }
+
+  // --- OPTIMIZED SINGLE-BUBBLE GEOMETRIC VECTOR SOLVER ---
+  // We evaluate turns in both directions (Right/Left) to pick the one that creates a single clean bubble loop
+  const centerlineAngleDiff = ((runway.hdg - brgToFAF + 540) % 360) - 180
+  
+  // Decide the side choice that prevents nested double figure-eights
+  const optimalSideTurnDir = centerlineAngleDiff >= 0 ? 1 : -1
+
+  // Trace the backward approach template path from the FAF joint outward
   const backwardPts = [{ lat: faf.lat, lon: faf.lon, hdg: runway.hdg }]
   let bLat = faf.lat
   let bLon = faf.lon
   let bHdg = runway.hdg
 
-  // Generate a standard smooth procedural base curve stretching backward from the FAF joint
-  for (let s = 0; s < 180; s++) {
-    const hdgChange = SIM_TURN_RATE_DEG_S * SIM_DT * backTurnDir
+  // Expand base trajectory layout up to 270 degrees to create one large smooth sweep
+  for (let s = 0; s < 270; s++) {
+    const hdgChange = SIM_TURN_RATE_DEG_S * SIM_DT * optimalSideTurnDir
     bHdg = (bHdg - hdgChange + 360) % 360
     const backMoveHdg = (bHdg + 180) % 360
     const nextPos = movePos(bLat, bLon, backMoveHdg, stepM)
@@ -125,7 +164,7 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
     backwardPts.push({ lat: bLat, lon: bLon, hdg: bHdg })
   }
 
-  // --- PART 2: SIMULATE FORWARD FROM CURRENT PLANE POSITION & HEADING ---
+  // Track forward from the current position, matching the aircraft's real nose vector
   let fLat = planeLat
   let fLon = planeLon
   let fHdg = planeHdg
@@ -135,46 +174,44 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
   let bestBackwardIdx = 0
   let interceptFound = false
 
+  // Evaluate which direction the aircraft should roll to seamlessly merge onto the bubble tangent
+  const initialSteerDiff = ((calcBearing(planeLat, planeLon, backwardPts[40]?.lat || faf.lat, backwardPts[40]?.lon || faf.lon) - planeHdg + 540) % 360) - 180
+  const chosenAircraftTurnDir = initialSteerDiff >= 0 ? 1 : -1
+
   for (let f = 0; f < maxSteps; f++) {
-    // Look ahead to find if any point along our current forward flight line path 
-    // cleanly intersects or aligns with a position on the backward-traced arrival track
+    // Keep a continuous minimum rolling forward arc for 10 seconds to ensure a curved joint connection
+    const isInitialArcForced = (f < 10)
+
     let closestBackIdx = -1
     let minDiff = Infinity
 
-    for (let b = 0; b < backwardPts.length; b++) {
-      const bPt = backwardPts[b]
-      const brgToTarget = calcBearing(fLat, fLon, bPt.lat, bPt.lon)
-      
-      // Look for a perfect vector convergence: current heading matches direction to target,
-      // and target's expected entry heading matches that exact tracking trajectory line
-      const headingDiff = Math.abs(((fHdg - brgToTarget + 540) % 360) - 180)
-      const targetArrivalDiff = Math.abs(((bPt.hdg - brgToTarget + 540) % 360) - 180)
-      const totalMisalignment = headingDiff + targetArrivalDiff
+    if (!isInitialArcForced) {
+      // Look for a perfect tangential intersection point
+      for (let b = 0; b < backwardPts.length; b++) {
+        const bPt = backwardPts[b]
+        const brgToTarget = calcBearing(fLat, fLon, bPt.lat, bPt.lon)
+        
+        const headingDiff = Math.abs(((fHdg - brgToTarget + 540) % 360) - 180)
+        const targetArrivalDiff = Math.abs(((bPt.hdg - brgToTarget + 540) % 360) - 180)
+        const totalMisalignment = headingDiff + targetArrivalDiff
 
-      if (totalMisalignment < minDiff) {
-        minDiff = totalMisalignment
-        closestBackIdx = b
+        if (totalMisalignment < minDiff) {
+          minDiff = totalMisalignment
+          closestBackIdx = b
+        }
       }
     }
 
-    // Capture the exact moment where tracking fields smoothly cross/unify within tolerances
-    if (closestBackIdx !== -1 && minDiff < 4.0) {
+    if (closestBackIdx !== -1 && minDiff < 4.5) {
       bestForwardIdx = f
       bestBackwardIdx = closestBackIdx
       interceptFound = true
       break
     }
 
-    // Determine the direction the plane needs to steer to capture the backward track
-    const targetPt = backwardPts[0] // Aim generally toward the arrival base structure
-    const brgToTrack = calcBearing(fLat, fLon, targetPt.lat, targetPt.lon)
-    const steerDiff = ((brgToTrack - fHdg + 540) % 360) - 180
-    const steerDir = steerDiff >= 0 ? 1 : -1
-
-    // Apply strict turn physics limit constraints
+    // Apply the standard rate turn physics engine step
     const maxTurn = SIM_TURN_RATE_DEG_S * SIM_DT
-    const hdgApply = Math.sign(steerDiff) * Math.min(Math.abs(steerDiff), maxTurn)
-    fHdg = (fHdg + hdgApply + 360) % 360
+    fHdg = (fHdg + (chosenAircraftTurnDir * maxTurn) + 360) % 360
 
     const nextPos = movePos(fLat, fLon, fHdg, stepM)
     fLat = nextPos.lat
@@ -182,16 +219,15 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
     forwardPts.push({ lat: fLat, lon: fLon, hdg: fHdg })
   }
 
-  // --- PART 3: CONNECTING THE DISCOVERY LINES ---
   const dynamicTrack = []
 
   if (interceptFound) {
-    // 1. Add the smooth forward turn points up to the intercept point
+    // Extract the forward sweep
     for (let i = 0; i <= bestForwardIdx; i++) {
       dynamicTrack.push({ lat: forwardPts[i].lat, lon: forwardPts[i].lon })
     }
 
-    // 2. Add an intermediate closing line segment between the two paths if a minor gap remains
+    // Create a perfectly smooth tangent bridging connection line between the two curves
     const interceptStart = forwardPts[bestForwardIdx]
     const interceptEnd = backwardPts[bestBackwardIdx]
     const gapDist = distM(interceptStart.lat, interceptStart.lon, interceptEnd.lat, interceptEnd.lon)
@@ -201,7 +237,7 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
       let cLon = interceptStart.lon
       const gapBrg = calcBearing(cLat, cLon, interceptEnd.lat, interceptEnd.lon)
       let dCount = 0
-      while (distM(cLat, cLon, interceptEnd.lat, interceptEnd.lon) > stepM && dCount < 100) {
+      while (distM(cLat, cLon, interceptEnd.lat, interceptEnd.lon) > stepM && dCount < 120) {
         const nPos = movePos(cLat, cLon, gapBrg, stepM)
         cLat = nPos.lat
         cLon = nPos.lon
@@ -210,38 +246,37 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
       }
     }
 
-    // 3. Follow the backward track curve points down into the FAF joint entry point
+    // Merge into the base procedural arrival sweep arc straight into the 10NM FAF window
     for (let i = bestBackwardIdx; i >= 0; i--) {
       dynamicTrack.push({ lat: backwardPts[i].lat, lon: backwardPts[i].lon })
     }
   } else {
-    // Complete seamless mathematical fallback safety line to FAF joint if angles are completely broken
+    // Clean direct visual fallback path line structure layout line
     dynamicTrack.push({ lat: planeLat, lon: planeLon })
     dynamicTrack.push({ lat: faf.lat, lon: faf.lon })
   }
 
-  // --- PART 4: SOLID APPROACH CENTERLINE TO RUNWAY ---
-  const finalWaypoints = [...dynamicTrack]
+  const centerlineLine = [[faf.lat, faf.lon], [runway.tLat, runway.tLon]]
+  const clLinePts = packageCenterline(faf, threshold, runway.hdg, stepM)
+  return { allWPs: [...dynamicTrack, ...clLinePts], curveLine: dynamicTrack.map(p => [p.lat, p.lon]), centerlineLine }
+}
+
+function packageCenterline(faf, threshold, runwayHdg, stepM) {
+  const linePts = []
   let centerlineLat = faf.lat
   let centerlineLon = faf.lon
-  const rwyBrg = runway.hdg
   const totalCenterlineDist = distM(faf.lat, faf.lon, threshold.lat, threshold.lon)
   
   let clTravelled = 0
   while (clTravelled < totalCenterlineDist) {
-    const nextCl = movePos(centerlineLat, centerlineLon, rwyBrg, stepM)
+    const nextCl = movePos(centerlineLat, centerlineLon, runwayHdg, stepM)
     centerlineLat = nextCl.lat
     centerlineLon = nextCl.lon
-    finalWaypoints.push({ lat: centerlineLat, lon: centerlineLon })
+    linePts.push({ lat: centerlineLat, lon: centerlineLon })
     clTravelled += stepM
   }
-  finalWaypoints.push({ ...threshold })
-
-  return { 
-    allWPs: finalWaypoints, 
-    curveLine: dynamicTrack.map(p => [p.lat, p.lon]), 
-    centerlineLine: [[faf.lat, faf.lon], [runway.tLat, runway.tLon]] 
-  }
+  linePts.push({ ...threshold })
+  return linePts
 }
 
 const makePlaneIcon = (isSelected, landing) => {
@@ -342,7 +377,7 @@ export default function AnimatedAircraftMarker({
     const runway = pickRunway(runwaysMap, landingTarget.airport, cur.lat, cur.lon)
     if (!runway) return
 
-    // Pass the actual real-time current display heading to guarantee smooth turn initialization
+    // Pass the real-time display heading directly to avoid layout jumps
     const { allWPs, curveLine, centerlineLine } = buildApproachWaypoints(cur.lat, cur.lon, state.displayHeading, runway)
 
     state.landing          = true
@@ -474,7 +509,6 @@ export default function AnimatedAircraftMarker({
         eventHandlers={{ click: handleClick }}
       />
 
-      {/* Intercept line: Curves smoothly away from the plane's real heading, locks flatly to the FAF joint */}
       {pathVis?.curveLine?.length > 1 && (
         <Polyline
           positions={pathVis.curveLine}
@@ -483,7 +517,6 @@ export default function AnimatedAircraftMarker({
         />
       )}
 
-      {/* Untouched solid approach final line */}
       {pathVis?.centerlineLine && (
         <Polyline
           positions={pathVis.centerlineLine}
