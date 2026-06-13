@@ -179,6 +179,19 @@ body {
   background-color: #2a2a2a;
 }
 
+.aircraft-marker {
+  background: none !important;
+  border: none !important;
+}
+
+.aircraft-marker__rotator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+  transition: transform 0.3s ease;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;

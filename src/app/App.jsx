@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Polyline, Popup } from 'react-leaflet'
 import L from 'leaflet'
+import AircraftMarker from '../components/AircraftMarker'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -312,6 +313,15 @@ export default function App() {
               {runwayLines()}
             </>
           )}
+
+          <AircraftMarker
+            position={[43.68, -79.42]}
+            heading={270}
+            altitude={35000}
+            speed={475}
+            callSign="ACA104"
+            color="#00ccff"
+          />
         </MapContainer>
       </main>
     </div>
