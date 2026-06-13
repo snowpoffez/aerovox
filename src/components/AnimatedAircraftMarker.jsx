@@ -81,7 +81,7 @@ const getDisplayPosition = (state, now) => {
   return pos
 }
 
-export default function AnimatedAircraftMarker({ craft, isSelected, onSelect }) {
+export default function AnimatedAircraftMarker({ craft, isSelected, livePosRef, onSelect }) {
   const markerRef   = useRef(null)
   const onSelectRef = useRef(onSelect)
   const craftRef    = useRef(craft)
@@ -127,6 +127,9 @@ export default function AnimatedAircraftMarker({ craft, isSelected, onSelect }) 
     state.velocity = craft.velocity
   }, [craft.lat, craft.lon, craft.heading, craft.velocity])
 
+  const livePosRefRef = useRef(livePosRef)
+  useEffect(() => { livePosRefRef.current = livePosRef }, [livePosRef])
+
   // rAF loop: update position + rotation WITHOUT replacing the icon DOM node
   useEffect(() => {
     let frameId
@@ -140,6 +143,11 @@ export default function AnimatedAircraftMarker({ craft, isSelected, onSelect }) 
         state.displayHeading = heading
 
         marker.setLatLng([pos.lat, pos.lon])
+
+        // Push live dead-reckoned position to card if this plane is selected
+        if (livePosRefRef.current) {
+          livePosRefRef.current.current = pos
+        }
 
         // Rotate by mutating the existing SVG element — no setIcon call
         const el = marker.getElement()

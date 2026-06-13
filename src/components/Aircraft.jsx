@@ -43,7 +43,7 @@ const overlayStyle = (bg, fg) => ({
   pointerEvents: 'none',
 })
 
-export default function Aircraft({ selectedCallsign, onSelectAircraft }) {
+export default function Aircraft({ selectedCallsign, livePosRef, onSelectAircraft }) {
   const [aircraft, setAircraft] = useState([])
   const [status, setStatus]     = useState('loading')
   const [errorMsg, setErrorMsg] = useState('')
@@ -106,7 +106,7 @@ export default function Aircraft({ selectedCallsign, onSelectAircraft }) {
             craft={{
               icao24,
               callsign,
-              country:  ac.r ?? '—',   // registration as country proxy
+              country:  ac.r ?? '—',
               lat,
               lon,
               baroAlt:  ftToM(ac.alt_baro),
@@ -117,6 +117,7 @@ export default function Aircraft({ selectedCallsign, onSelectAircraft }) {
               squawk:   ac.squawk ?? '—',
             }}
             isSelected={selectedCallsign === callsign}
+            livePosRef={selectedCallsign === callsign ? livePosRef : null}
             onSelect={onSelectAircraft}
           />
         )

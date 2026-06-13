@@ -281,6 +281,96 @@ body {
   text-align: right;
 }
 
+/* ── wind controls ──────────────────────────────────────────────── */
+.wind-controls {
+  position: fixed;
+  bottom: 24px;
+  left: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.wind-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 1rem;
+  background: rgba(8, 12, 18, 0.88);
+  color: #adbac7;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.wind-toggle:hover {
+  border-color: rgba(70, 210, 255, 0.45);
+  color: #e8edf2;
+}
+
+.wind-toggle--active {
+  border-color: rgba(70, 210, 255, 0.55);
+  background: rgba(70, 210, 255, 0.08);
+  color: #46d2ff;
+}
+
+.wind-toggle__icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.wind-legend {
+  padding: 0.75rem 0.95rem;
+  background: rgba(8, 12, 18, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  animation: aircraft-card-in 160ms ease;
+}
+
+.wind-legend__title {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #7ea2c8;
+  margin-bottom: 0.55rem;
+}
+
+.wind-legend__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.wind-legend__row:last-child { margin-bottom: 0; }
+
+.wind-legend__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 5px currentColor;
+}
+
+.wind-legend__label {
+  color: #e8edf2;
+  min-width: 70px;
+}
+
+.wind-legend__range {
+  color: #7ea2c8;
+  font-size: 0.72rem;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
