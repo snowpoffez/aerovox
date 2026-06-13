@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 import { Globe } from './Globe'
@@ -18,7 +19,9 @@ export function FlightScene() {
         <ambientLight intensity={0.4} />
         <directionalLight position={[10, 10, 5]} intensity={1.5} />
         <directionalLight position={[-10, -5, -10]} intensity={0.3} />
-        <Globe />
+        <Suspense fallback={null}>
+          <Globe />
+        </Suspense>
       </Canvas>
     </div>
   )
