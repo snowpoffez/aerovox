@@ -1,53 +1,164 @@
-# Assistive Flying System
+# ✈️ Aerovox
 
-Real-time assistive co-pilot: detects turbulence from live flight data → announces a
-corrective action via ElevenLabs → listens for pilot voice confirmation → moves
-servo-driven flaps on a hardware model and stabilizes a 3D aircraft on the dashboard.
+Real-time flight tracking and turbulence visualization platform. A modern TypeScript full-stack application built with Express.js backend and React frontend.
 
-## Layout
+## 🚀 Features
+
+- **Real-time Flight Tracking**: Live aircraft position, altitude, and telemetry data
+- **Turbulence Detection**: Visual representation of turbulence zones
+- **Weather Integration**: Real-time weather data overlay
+- **WebSocket Communication**: Real-time updates via WebSocket protocol
+- **Responsive UI**: Mobile-friendly interface with dark mode
+- **TypeScript**: Fully typed codebase for production reliability
+
+## 📋 Project Structure
 
 ```
-.
-├── plan.md
-├── frontend/   Vite + React + Mapbox GL + Three.js dashboard
-├── backend/    Python orchestrator (OpenSky, turbulence, voice, serial, WebSocket)
-└── arduino/    flap_controller.ino (2x servo)
+aerovox/
+├── server/                 # Node.js Express backend
+│   ├── src/
+│   │   ├── index.ts       # Server entry point
+│   │   ├── websocket.ts   # WebSocket handler
+│   │   └── services/
+│   │       └── flightData.ts  # Flight data service
+│   ├── package.json
+│   └── tsconfig.json
+├── client/                 # React TypeScript frontend
+│   ├── src/
+│   │   ├── main.tsx       # React entry point
+│   │   ├── App.tsx        # Main app component
+│   │   └── index.css      # Styles
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── tsconfig.json
+├── package.json           # Root workspace package
+├── tsconfig.json          # Root TypeScript config
+├── .eslintrc.json         # ESLint configuration
+└── .prettierrc.json       # Prettier configuration
 ```
 
-## Quick start
-
-### Frontend
-```bash
-cd frontend
-npm install
-cp .env.example .env          # optional — no map key needed
-npm run dev                   # http://localhost:5173
-```
+## 🛠️ Tech Stack
 
 ### Backend
+- **Runtime**: Node.js 18+
+- **Framework**: Express.js
+- **Language**: TypeScript
+- **Real-time**: WebSocket (ws library)
+- **HTTP Client**: Axios
+
+### Frontend
+- **Framework**: React 18
+- **Language**: TypeScript
+- **Build Tool**: Vite
+- **Mapping**: MapLibre GL (prepared)
+- **Styling**: CSS3
+
+### Development Tools
+- **Package Manager**: npm (workspaces)
+- **Linter**: ESLint
+- **Formatter**: Prettier
+- **Task Runner**: Concurrently
+
+## 📦 Prerequisites
+
+- Node.js 18 or higher
+- npm 8 or higher
+
+## 🚀 Quick Start
+
+### Installation
+
 ```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate          # Windows  (source venv/bin/activate on macOS/Linux)
-pip install -r requirements.txt
-copy .env.example .env         # add ElevenLabs key + serial port
-python main.py                 # ws://localhost:8765
+npm install
 ```
 
-### Arduino
-Open `arduino/flap_controller/flap_controller.ino` in the Arduino IDE, select your board
-and port, and upload. The Serial Monitor should print `READY`.
+This will install dependencies for both server and client packages.
 
-## Demo without hardware / network
+### Development Mode
 
-- **Map uses no API key.** Tiles come from keyless CARTO dark (default) or Esri
-  satellite — set `VITE_MAP_STYLE=dark|satellite` in `frontend/.env`. If the venue
-  WiFi is down the tiles won't load, but the standalone 3D aircraft panel
-  (bottom-right) still shows the shake/stabilize animation driven by WebSocket state.
-- **No OpenSky / bad WiFi?** Set `USE_REPLAY=true` in `backend/.env` to play
-  `replay_data/recorded_flight.json`.
-- **No microphone / noisy room?** Set `SKIP_VOICE=true` in `backend/.env` to
-  auto-confirm, and use the **TRIGGER TURBULENCE** button on the dashboard.
+```bash
+npm run dev
+```
+
+This starts:
+- Backend server on `http://localhost:3000`
+- Frontend dev server on `http://localhost:5173`
+
+### Production Build & Run
+
+```bash
+npm run build
+npm start
+```
+
+## 🔧 Configuration
+
+Create `server/.env`:
+
+```env
+NODE_ENV=development
+PORT=3000
+OPENSKY_USERNAME=
+OPENSKY_PASSWORD=
+DEBUG=false
+LOG_LEVEL=info
+```
+
+See `server/.env.example` for all options.
+
+## 📡 API & WebSocket
+
+### REST Endpoints
+- `GET /health` - Server health check
+- `GET /api/flights` - Get all active flights
+- `GET /api/turbulence` - Get turbulence zones
+- `GET /api/weather` - Get weather data
+
+### WebSocket Connection
+```
+ws://localhost:3000/ws
+```
+
+Real-time flight updates broadcast every 5 seconds.
+
+## 🧪 Quality Assurance
+
+```bash
+npm run type-check    # TypeScript validation
+npm run lint          # ESLint check
+```
+
+## 📚 Development
+
+- **Strict TypeScript**: Fully typed codebase
+- **Modern React**: Functional components & hooks
+- **Express Best Practices**: Consistent error handling & logging
+- **Code Formatting**: Prettier configured for consistency
+
+## 🔗 Integration
+
+The app is ready for OpenSky Network API integration:
+1. Register at https://opensky-network.org/
+2. Add credentials to `server/.env`
+3. Uncomment API call in `server/src/services/flightData.ts`
+
+## 📈 Roadmap
+
+- [ ] MapLibre GL interactive map
+- [ ] Flight history storage
+- [ ] Advanced turbulence modeling
+- [ ] User authentication
+- [ ] Cloud deployment
+- [ ] Mobile app (React Native)
+
+## 📄 License
+
+See LICENSE file
+
+## 📧 Support
+
+Open a GitHub issue for questions or bugs
 
 ## Real-time turbulence detection
 
