@@ -1,9 +1,6 @@
 import * as THREE from 'three'
 import { lngLatToMercator } from '../utils/mercator'
 
-// Mapbox custom layer that draws a 3D aircraft arrow with Three.js, sharing the
-// map's WebGL context. Returns { layer, update } — call update() whenever the
-// flight state changes so the next render frame reflects it.
 export function createAircraftLayer(initial = {}) {
   const state = {
     lng: initial.longitude ?? -79.63,
@@ -30,20 +27,54 @@ export function createAircraftLayer(initial = {}) {
       this.scene = new THREE.Scene()
       this.camera = new THREE.Camera()
 
-      // Arrow: a cone pointing along +X (heading), with two swept-back fins.
+      const bodyMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee })
+      const accentMat = new THREE.MeshBasicMaterial({ color: 0x3366ff })
+      const darkMat = new THREE.MeshBasicMaterial({ color: 0x555555 })
+      const noseMat = new THREE.MeshBasicMaterial({ color: 0x777777 })
+
+      this.material = bodyMat
+      this._accentMat = accentMat
+      this._noseMat = noseMat
+
       const group = new THREE.Group()
 
-      const body = new THREE.ConeGeometry(0.00006, 0.00025, 8)
-      body.rotateZ(-Math.PI / 2)
-      this.material = new THREE.MeshBasicMaterial({ color: 0xffffff })
-      group.add(new THREE.Mesh(body, this.material))
+      // Fuselage
+      const fuseGeom = new THREE.CylinderGeometry(0.000035, 0.00005, 0.0002, 8)
+      fuseGeom.rotateZ(-Math.PI / 2)
+      group.add(new THREE.Mesh(fuseGeom, bodyMat))
 
-      const fin = new THREE.BoxGeometry(0.00008, 0.000015, 0.00018)
-      const finL = new THREE.Mesh(fin, this.material)
-      finL.position.set(-0.00007, 0, 0.00007)
-      const finR = new THREE.Mesh(fin, this.material)
-      finR.position.set(-0.00007, 0, -0.00007)
-      group.add(finL, finR)
+      // Nose cone
+      const noseGeom = new THREE.ConeGeometry(0.00005, 0.00005, 8)
+      noseGeom.rotateZ(-Math.PI / 2)
+      const noseMesh = new THREE.Mesh(noseGeom, noseMat)
+      noseMesh.position.x = 0.000125
+      group.add(noseMesh)
+
+      // Main wings
+      const wingGeom = new THREE.BoxGeometry(0.00006, 0.00018, 0.000008)
+      group.add(new THREE.Mesh(wingGeom, bodyMat))
+
+      // Wing tips (colored)
+      const tipGeom = new THREE.BoxGeometry(0.000015, 0.000035, 0.00001)
+      const tipL = new THREE.Mesh(tipGeom, accentMat)
+      tipL.position.set(0, 0.00009, 0)
+      const tipR = new THREE.Mesh(tipGeom, accentMat)
+      tipR.position.set(0, -0.00009, 0)
+      group.add(tipL, tipR)
+
+      // Tail vertical stabilizer
+      const tailVGeom = new THREE.BoxGeometry(0.00004, 0.000005, 0.00006)
+      const tailVMesh = new THREE.Mesh(tailVGeom, darkMat)
+      tailVMesh.position.set(-0.000105, 0, 0.00004)
+      group.add(tailVMesh)
+
+      // Tail horizontal stabilizers
+      const tailHGeom = new THREE.BoxGeometry(0.000025, 0.00006, 0.000005)
+      const tailHL = new THREE.Mesh(tailHGeom, darkMat)
+      tailHL.position.set(-0.000105, 0.000035, 0)
+      const tailHR = new THREE.Mesh(tailHGeom, darkMat)
+      tailHR.position.set(-0.000105, -0.000035, 0)
+      group.add(tailHL, tailHR)
 
       this.arrow = group
       this.scene.add(this.arrow)
@@ -61,7 +92,10 @@ export function createAircraftLayer(initial = {}) {
         this.arrow.position.y += (Math.random() - 0.5) * 0.000004 * state.turbIntensity
       }
 
-      this.material.color.set(state.turbulenceActive ? 0xff4422 : 0xffffff)
+      const isTurb = state.turbulenceActive
+      this.material.color.setHex(isTurb ? 0xff4422 : 0xeeeeee)
+      this._accentMat.color.setHex(isTurb ? 0xff8844 : 0x3366ff)
+      this._noseMat.color.setHex(isTurb ? 0xcc3333 : 0x777777)
 
       this.renderer.resetState()
       this.renderer.render(this.scene, this.camera)
