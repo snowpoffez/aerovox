@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "description": "Curated trigger words for aviation voice commands and confirmations.",
+  "categories": {
+    "confirmation": ["yes", "yeah", "yep", "confirm", "correct", "affirmative", "okay", "ok", "roger"],
+    "negation": ["no", "nope", "negative", "cancel", "reject", "stop"],
+    "throttle": ["throttle", "power", "accelerate", "increase power", "more power", "speed up", "advance throttle"],
+    "turn": ["turn", "left", "right", "bank", "heading", "yaw", "left turn", "right turn"],
+    "climb": ["climb", "ascend", "up", "increase altitude", "gain altitude", "pull up"],
+    "descend": ["descend", "down", "lose altitude", "decrease altitude", "sink"],
+    "pitch": ["pitch", "nose up", "nose down", "elevate", "lower nose"],
+    "roll": ["roll", "bank left", "bank right", "level wings", "wings level"],
+    "speed": ["speed", "airspeed", "faster", "slower", "reduce speed", "increase speed"],
+    "flaps": ["flaps", "flap", "flap up", "flap down", "set flaps"],
+    "gear": ["gear", "landing gear", "gear up", "gear down"],
+    "brakes": ["brake", "brakes", "wheel brakes", "apply brakes", "release brakes"],
+    "autopilot": ["autopilot", "auto pilot", "hold", "maintain", "level off"],
+    "navigation": ["navigate", "course", "route", "bearing", "vector", "direct to"],
+    "safety": ["emergency", "mayday", "panic", "abort", "hold", "standby", "repeat"],
+    "map": ["move map", "pan map", "drag map", "zoom in", "zoom out", "reset map"]
+  },
+  "notes": [
+    "Use these as intent keywords for voice commands or button labels.",
+    "Add more synonyms here as you expand the command set."
+  ]
+}
