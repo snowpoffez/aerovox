@@ -11,6 +11,8 @@ export type Command =
   | { type: 'land';          runway: string; airport: string }
   | { type: 'taxi_to_gate';  gate: string }
   | { type: 'select_runway'; runway: string }
+  | { type: 'throttle_up' }
+  | { type: 'throttle_down' }
 
 export interface ParsedCommand {
   command: Command
@@ -82,6 +84,7 @@ export type S2C =
   | { type: 'ground_phase';   phase: AppState; airport: string; runway?: string; gate?: string }
   | { type: 'no_fly_alert';   zoneName: string; alternateRoute: ScoredRoute }
   | { type: 'error';          message: string }
+  | { type: 'throttle_execute'; active: boolean; callsign?: string }
 
 export type C2S =
   | { type: 'transcript'; text: string }

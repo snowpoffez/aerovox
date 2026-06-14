@@ -82,7 +82,7 @@ export function parseCommand(raw: string): ParsedCommand {
   }
 
   // Landing
-  if (/\b(?:land|approach|cleared to land|cleared for approach)\b/i.test(text)) {
+  if (/\b(?:land|approach|end|cleared to land|cleared for approach)\b/i.test(text)) {
     const airportMatch = text.match(/\b(cyyz|cyul|cyvr|cyyc|cyeg|kjfk|kord|jfk|ord|yyz|yul|yvr|yyc|yeg|toronto|vancouver|montreal|calgary|edmonton|chicago|new york)\b/i)
     const airportRaw   = airportMatch ? airportMatch[1] : 'CYYZ'
     const airport      = AIRPORT_ALIASES[airportRaw.toLowerCase()] ?? airportRaw.toUpperCase()
@@ -131,6 +131,14 @@ export function parseCommand(raw: string): ParsedCommand {
     return { command: { type: 'route_request', intent: text }, confidence: 0.82, raw }
   }
 
+  // Throttle
+  if (/\b(?:throttle|level|speed|engines|engine|power|motor)\s+(?:up|on|increase|start)\b/i.test(text)) {
+    return { command: { type: 'throttle_up' }, confidence: 0.90, raw }
+  }
+  if (/\b(?:throttle|level|speed|engines|engine|power|motor)\s+(?:down|off|decrease|stop|reduce)\b/i.test(text)) {
+    return { command: { type: 'throttle_down' }, confidence: 0.90, raw }
+  }
+
   return { command: { type: 'unknown', raw }, confidence: 0.3, raw }
 }
 
@@ -150,6 +158,10 @@ export function commandToReadback(cmd: Command): string {
       return `Cleared to land runway ${cmd.runway} at ${cmd.airport}. Say confirm to proceed.`
     case 'taxi_to_gate':
       return `Taxi to ${cmd.gate}. Say confirm to proceed.`
+    case 'throttle_up':
+      return 'Throttle up. Confirm to proceed.'
+    case 'throttle_down':
+      return 'Throttle down. Confirm to proceed.'
     default:
       return 'Command not understood. Please repeat.'
   }

@@ -2,7 +2,7 @@
 let port: import('serialport').SerialPort | null = null;
 let sendRaw: ((data: string) => void) | null = null;
 
-const STEPS_PER_REV = 2048;
+const STEPS_PER_REV = 4096;
 
 async function tryPort(path: string): Promise<boolean> {
   try {
@@ -52,10 +52,25 @@ export function sendBearing(bearing: number): void {
   // Ensure normalized 0 - 360 compass format
   const normalizedBearing = ((bearing % 360) + 360) % 360;
   
-  // Map 0-360 degrees directly to 0-2048 step range
+  // Map 0-360 degrees directly to 0-4096 step range
   const targetSteps = Math.round((normalizedBearing / 360) * STEPS_PER_REV);
   
   sendRaw(`STEPS:${targetSteps}\n`);
+}
+
+export function sendSpeed(knots: number): void {
+  if (!sendRaw) return;
+
+  // Map knots to PWM 0-255
+  // 0-50 knots → 0 (motor stopped)
+  // 50-300 knots → 0-255 linear
+  // 300+ knots → 255 (full speed)
+  let pwm = 0
+  if (knots > 50) {
+    pwm = Math.round(((Math.min(knots, 300) - 50) / 250) * 255)
+  }
+
+  sendRaw(`SPEED:${pwm}\n`);
 }
 
 // Keep exported interface compatible with your existing index.ts routing system

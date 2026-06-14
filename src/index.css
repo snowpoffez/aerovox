@@ -49,6 +49,19 @@ html, body, #root {
   text-transform: uppercase; pointer-events: none;
 }
 
+.turbulence-pill {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 1000; padding: 8px 18px;
+  background: #1a0a0a; border: 1px solid #ff4444;
+  color: #ff6666; font-size: 13px; letter-spacing: 0.04em;
+  font-weight: 700; pointer-events: none;
+  animation: turbulence-flash 1.3s ease-in-out infinite;
+}
+@keyframes turbulence-flash {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
 /* ══════════════════════════════════════════════════════════════
    COCKPIT LAYOUT
 ══════════════════════════════════════════════════════════════ */
@@ -148,6 +161,16 @@ html, body, #root {
   font-family: var(--mono); font-size: 10px; color: var(--amber);
   letter-spacing: 0.1em; text-transform: uppercase;
   animation: ptt-pulse 1.4s ease-in-out infinite;
+}
+
+.topbar__turbulence {
+  font-family: var(--mono); font-size: 10px; color: var(--amber);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  animation: turbulence-flash 1.3s ease-in-out infinite;
+}
+@keyframes turbulence-flash {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
 }
 
 /* ── Body ────────────────────────────────────────────────────────────────────── */
@@ -397,3 +420,17 @@ html, body, #root {
   .cockpit__sidebar { display: none; }
   .aircraft-card, .airport-card { top: calc(var(--topbar-h) + 4px); }
 }
+
+/* ── Wind toggle ───────────────────────────────────────────────────────────────── */
+.streak-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; font-size: 11px;
+  font-family: var(--mono); letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--surface-2); border: 1px solid var(--border-hi);
+  color: var(--text-2); cursor: pointer;
+  transition: all 100ms;
+  margin-right: auto;
+}
+.streak-toggle:hover { border-color: var(--amber); color: var(--amber); }
+.streak-toggle--active { background: #120f00; border-color: var(--amber); color: var(--amber); }

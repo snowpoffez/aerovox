@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { MapContainer, TileLayer } from 'react-leaflet'
+import { MapContainer, TileLayer, Polyline } from 'react-leaflet'
 import L from 'leaflet'
 import Airports        from '../components/Airports.jsx'
 import Aircraft        from '../components/Aircraft.jsx'
 import AirportInfoCard from '../components/AirportInfoCard.jsx'
 import WindLayer, { WIND_LEVELS } from '../components/WindLayer.jsx'
+import NoFlyZones from '../components/NoFlyZones.jsx'
 import CommandLog      from '../components/CommandLog.jsx'
 import RoutePreview    from '../components/RoutePreview.jsx'
 import RouteMarkers    from '../components/RouteMarkers.jsx'
@@ -64,6 +65,60 @@ function parseLandTarget(text) {
   return null
 }
 
+const toRad = d => d * Math.PI / 180
+const calcBearing = (la1, lo1, la2, lo2) => {
+  const φ1 = toRad(la1), φ2 = toRad(la2), Δλ = toRad(lo2 - lo1)
+  const y = Math.sin(Δλ) * Math.cos(φ2)
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
+}
+const DIST_KM = (la1, lo1, la2, lo2) => {
+  const dLat = toRad(la2 - la1), dLon = toRad(lo2 - lo1)
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(la1)) * Math.cos(toRad(la2)) * Math.sin(dLon/2)**2
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+}
+
+const STORM_CX = 44.475, STORM_CY = -80.308
+const STORM_BUF_NM = 14
+const generateDiversionRoute = (startLat, startLon) => {
+  const kmPerDeg = 111.32
+  const lonScale = Math.cos(STORM_CX * Math.PI / 180)
+  const rLat = STORM_BUF_NM * 1.852 / kmPerDeg
+  const rLon = STORM_BUF_NM * 1.852 / (kmPerDeg * lonScale)
+
+  const dLat = (startLat - STORM_CX) / rLat
+  const dLon = (startLon - STORM_CY) / rLon
+  const startAngle = Math.atan2(dLon, dLat) * 180 / Math.PI
+  const startDist  = Math.sqrt(dLat * dLat + dLon * dLon)
+
+  const ENTRY = 18, EXIT = 18
+  const arcStart = startAngle
+  const arcEnd   = startAngle + 180
+
+  const wps = []
+  for (let d = arcStart; d <= arcEnd + EXIT; d += 1.2) {
+    const a = d * Math.PI / 180
+    const entryEnd = arcStart + ENTRY
+    const exitStart = arcEnd
+
+    let radius
+    if (d <= entryEnd) {
+      const t = (d - arcStart) / ENTRY
+      const s = t * t * (3 - 2 * t)
+      radius = startDist + (1 - startDist) * s
+    } else if (d >= exitStart) {
+      const t = (d - exitStart) / EXIT
+      const s = t * t * (3 - 2 * t)
+      radius = 1 + 0.7 * s
+    } else {
+      radius = 1
+    }
+
+    wps.push([STORM_CX + radius * rLat * Math.cos(a), STORM_CY + radius * rLon * Math.sin(a)])
+  }
+  return wps
+}
+
 const LANGUAGES = [
   { code: 'en', label: 'English'   },
   { code: 'fr', label: 'Français'  },
@@ -77,7 +132,7 @@ export default function App() {
   const [loading,          setLoading]          = useState(true)
   const [selectedAirport,  setSelectedAirport]  = useState(null)
   const [selectedAircraft, setSelectedAircraft] = useState(null)
-  const [windVisible,      setWindVisible]      = useState(false)
+  const [windVisible,      setWindVisible]      = useState(true)
   const [runwaysMap,       setRunwaysMap]       = useState({})
   const livePosRef = useRef(null)
 
@@ -92,8 +147,14 @@ export default function App() {
   const [pttHeld,        setPttHeld]        = useState(false)
   const [landingTarget,  setLandingTarget]  = useState(null)
   const [approved,       setApproved]       = useState(false)
+  const [throttleActive, setThrottleActive] = useState(false)
+  const [turbulenceAlert, setTurbulenceAlert] = useState(null)
+  const [diversionRoute, setDiversionRoute] = useState(null)
+  const diversionRef = useRef({ active: false, wpIdx: 0, waypoints: null })
+  const diversionPendingRef = useRef(false)
   const pendingLandMeta  = useRef(null)
   const pendingHeadingRef = useRef(null)
+  const selectedAircraftRef = useRef(null)
 
   // Client-side targeted simulator values
   const [targetAltitude, setTargetAltitude] = useState(null) 
@@ -103,10 +164,22 @@ export default function App() {
   // Reset targets if the user manually changes or deselects an aircraft
   const handleSelectAircraft = (aircraft) => {
     setSelectedAircraft(aircraft)
+    selectedAircraftRef.current = aircraft
     setTargetAltitude(null)
     setTargetSpeed(null)
     setTargetHeading(null)
     pendingHeadingRef.current = null
+    pendingLandMeta.current = null
+    setDiversionRoute(null)
+    diversionRef.current = { active: false }
+    diversionPendingRef.current = aircraft?.callsign === 'ACA973'
+    if (aircraft?.callsign === 'ACA973') {
+      setTurbulenceAlert('⚠ SEVERE TURBULENCE REPORTED IN GEORGIAN BAY STORM AHEAD — SAY AFFIRMATIVE TO DIVERT')
+      const msg = new SpeechSynthesisUtterance('Severe turbulence reported in Georgian Bay storm ahead. Say affirmative to divert around the storm.')
+      speechSynthesis.speak(msg)
+    } else {
+      setTurbulenceAlert(null)
+    }
   }
 
   // ── WebSocket events ──────────────────────────────────────────────────────────
@@ -187,6 +260,7 @@ export default function App() {
           return [msg.entry, ...prev].slice(0, 20)
         })
       }),
+      on('throttle_execute', (msg) => setThrottleActive(msg.active)),
     ]
     return () => unsubs.forEach(fn => fn())
   }, [])
@@ -206,6 +280,18 @@ export default function App() {
 
   const handlePTTStart = useCallback(() => {
     if (!isSupported()) return
+
+    const craft = selectedAircraftRef.current
+    if (craft && craft.baroAlt != null && craft.baroAlt < 50) {
+      setTurbulenceAlert('⚠ AIRCRAFT ON GROUND — NO CLEARANCE AVAILABLE')
+      setTimeout(() => { if (selectedAircraftRef.current === craft) setTurbulenceAlert(null) }, 4000)
+      return
+    }
+
+    if (diversionPendingRef.current && !diversionRef.current.active) {
+      setTurbulenceAlert('⚠ SEVERE TURBULENCE REPORTED IN GEORGIAN BAY STORM AHEAD — SAY AFFIRMATIVE TO DIVERT')
+    }
+
     setPTTActive(true)
     setIsListening(true)
     setTranscript('')
@@ -218,6 +304,16 @@ export default function App() {
         if (LAND_RE.test(text)) {
           const target = parseLandTarget(text)
           if (target) pendingLandMeta.current = target
+        } else if (CONFIRM_RE.test(text) && diversionPendingRef.current && !diversionRef.current.active) {
+          const pos = livePosRef.current?.current || selectedAircraftRef.current
+          if (!pos || pos.lat == null) return
+          const wps = generateDiversionRoute(pos.lat, pos.lon)
+          setDiversionRoute(wps)
+          diversionRef.current = { active: true }
+          setTurbulenceAlert('✓ DIVERTING NORTH AROUND GEORGIAN BAY STORM')
+          const msg = new SpeechSynthesisUtterance('Diverting north around Georgian Bay storm')
+          speechSynthesis.speak(msg)
+          setTimeout(() => setTurbulenceAlert(null), 5000)
         } else if (CONFIRM_RE.test(text) && pendingLandMeta.current) {
           setLandingTarget(pendingLandMeta.current)
           pendingLandMeta.current = null
@@ -271,6 +367,9 @@ export default function App() {
           {approved && (
             <div className="topbar__approved">✓ APPROVED</div>
           )}
+          {turbulenceAlert && (
+            <div className="topbar__turbulence">{turbulenceAlert}</div>
+          )}
         </div>
 
         <div className="topbar__right">
@@ -315,7 +414,8 @@ export default function App() {
               landingTarget={landingTarget}
               targetAltitude={targetAltitude}
               targetSpeed={targetSpeed}
-              targetHeading={targetHeading} 
+              targetHeading={targetHeading}
+              throttleActive={throttleActive}
               runwaysMap={runwaysMap}
               livePosRef={livePosRef}
               onSelectAircraft={handleSelectAircraft}
@@ -325,9 +425,28 @@ export default function App() {
                 setTargetSpeed(null)
                 setTargetHeading(null)
               }}
+              diversionRoute={diversionRoute}
+              onDiversionComplete={() => {
+                setDiversionRoute(null)
+                diversionRef.current = { active: false }
+                setTurbulenceAlert('✓ STORM AVERTED — CONTINUE NORMAL NAVIGATION')
+                setTimeout(() => setTurbulenceAlert(null), 4000)
+                const msg = new SpeechSynthesisUtterance('Storm averted. Continue normal navigation.')
+                speechSynthesis.speak(msg)
+              }}
             />
             <WindLayer visible={windVisible} />
+            <NoFlyZones zones={[
+              { name: 'Georgian Bay Storm',  lat: 44.4750, lon: -80.3080, radiusNm: 12 },
+            ]} />
             <RoutePreview routes={routes} appState={appState} />
+            {diversionRoute && (
+              <Polyline
+                positions={diversionRoute}
+                pathOptions={{ color: '#3b82f6', weight: 2.5, dashArray: '10 6', opacity: 0.85 }}
+                interactive={false}
+              />
+            )}
           </MapContainer>
 
           <AirportInfoCard
@@ -349,12 +468,17 @@ export default function App() {
 
       <div className="bottombar">
         <button
+          className={`streak-toggle${windVisible ? ' streak-toggle--active' : ''}`}
+          onClick={() => setWindVisible(v => !v)}
+        >
+          <span>Wind</span>
+        </button>
+        <button
           className={`ptt-btn${isListening ? ' ptt-btn--active' : ''}`}
           onMouseDown={handlePTTStart} onMouseUp={handlePTTEnd}
           onTouchStart={handlePTTStart} onTouchEnd={handlePTTEnd}
         >
-          <span className="ptt-btn__icon">{isListening ? '🎙' : '🎤'}</span>
-          {isListening ? 'Listening…' : 'Push to Talk'}
+                    {isListening ? 'Listening…' : 'Push to Talk'}
           <span className="ptt-btn__hint">[Space]</span>
         </button>
       </div>

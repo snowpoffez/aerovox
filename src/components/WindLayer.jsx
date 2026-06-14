@@ -125,11 +125,8 @@ export default function WindLayer({ visible }) {
         return
       }
 
-      // ── trail: erase existing pixels gradually ───────────────────
-      ctx.globalCompositeOperation = 'destination-out'
-      ctx.fillStyle = 'rgba(0,0,0,0.055)'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.globalCompositeOperation = 'source-over'
+      // ── clear completely each frame — no persistent marks ──────
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
 
       const grid = windRef.current
       if (!grid) { frameId = requestAnimationFrame(tick); return }
@@ -162,11 +159,9 @@ export default function WindLayer({ visible }) {
         const fadeOut = 1 - Math.max(0, (p.age / MAX_AGE - 0.68) / 0.32)
         const a       = fadeIn * fadeOut * 0.88
 
-        const [r, g, b] = speedRGB(speed)
-
+        ctx.strokeStyle = `rgba(70,210,255,${a})`
+        ctx.lineWidth   = 1.2
         ctx.beginPath()
-        ctx.strokeStyle = `rgba(${r},${g},${b},${a})`
-        ctx.lineWidth   = speed > 22 ? 2.2 : speed > 15 ? 1.8 : 1.4
         ctx.moveTo(from.x, from.y)
         ctx.lineTo(to.x, to.y)
         ctx.stroke()

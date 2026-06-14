@@ -8,9 +8,7 @@ export interface NoFlyZone {
 }
 
 export const NO_FLY_ZONES: NoFlyZone[] = [
-  { name: 'Pearson Class C Airspace',    lat: 43.6777, lon: -79.6248, radiusNm: 5 },
-  { name: 'Toronto Downtown Restricted', lat: 43.6532, lon: -79.3832, radiusNm: 2 },
-  { name: 'Military Zone Alpha',         lat: 43.9000, lon: -79.5000, radiusNm: 8 },
+  { name: 'Georgian Bay Storm',          lat: 44.4750, lon: -80.3080, radiusNm: 12 },
 ]
 
 const NM_TO_KM = 1.852

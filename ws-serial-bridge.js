@@ -29,6 +29,12 @@ wss.on('connection', ws => {
         if (err) console.error('[serial] Write error:', err.message)
       })
     }
+
+    if (msg.type === 'heading_update' && typeof msg.speed === 'number') {
+      port.write(`SPEED:${msg.speed}\n`, err => {
+        if (err) console.error('[serial] Write error:', err.message)
+      })
+    }
   })
 
   ws.on('close', () => console.log('[ws] Client disconnected'))

@@ -32,7 +32,8 @@ const overlayStyle = (bg, fg) => ({
 
 export default function Aircraft({ 
   selectedCallsign, landingTarget, runwaysMap, livePosRef, 
-  onSelectAircraft, onLandingComplete, targetAltitude, targetSpeed, targetHeading 
+  onSelectAircraft, onLandingComplete, targetAltitude, targetSpeed, targetHeading, throttleActive,
+  diversionRoute, onDiversionComplete,
 }) {
   const [aircraft, setAircraft] = useState([])
   const [status, setStatus]     = useState('loading')
@@ -57,6 +58,13 @@ export default function Aircraft({
         if (cancelled) return
 
         const planes = (data.ac ?? []).filter(isLargeAircraft)
+        planes.push({
+          hex: 'C07ABC', flight: 'ACA973 ',
+          lat: 44.5667, lon: -80.9333,
+          alt_baro: 1000, alt_geom: 1050,
+          gs: 250, track: 100, baro_rate: 0,
+          squawk: '6503', r: 'CANADA', category: 'A4',
+        })
         setAircraft(planes)
         setStatus('ok')
       } catch (err) {
@@ -173,31 +181,34 @@ export default function Aircraft({
         const cmd = activeCommands.current[callsign] || {}
 
         return (
-          <AnimatedAircraftMarker
-            key={icao24}
-            craft={{
-              icao24,
-              callsign,
-              country:  ac.r ?? '—',
-              lat,
-              lon,
-              baroAlt:  ftToM(ac.alt_baro),
-              geoAlt:   ftToM(ac.alt_geom),
-              velocity: ktsToMs(ac.gs),
-              heading:  ac.track,
-              vertRate: ftMinToMs(ac.baro_rate),
-              squawk:   ac.squawk ?? '—',
-            }}
-            isSelected={isSelected}
-            landingTarget={cmd.landing ?? null}
-            targetAltitude={cmd.altitude ?? null}
-            targetSpeed={cmd.speed ?? null}
-            targetHeading={cmd.heading ?? null}
-            runwaysMap={runwaysMap}
-            livePosRef={isSelected ? livePosRef : null}
-            onSelect={onSelectAircraft}
-            onLandingComplete={isSelected ? () => { delete activeCommands.current[callsign]?.landing; onLandingComplete?.() } : null}
-          />
+            <AnimatedAircraftMarker
+              key={icao24}
+              craft={{
+                icao24,
+                callsign,
+                country:  ac.r ?? '—',
+                lat,
+                lon,
+                baroAlt:  ftToM(ac.alt_baro),
+                geoAlt:   ftToM(ac.alt_geom),
+                velocity: ktsToMs(ac.gs),
+                heading:  ac.track,
+                vertRate: ftMinToMs(ac.baro_rate),
+                squawk:   ac.squawk ?? '—',
+              }}
+              isSelected={isSelected}
+              landingTarget={cmd.landing ?? null}
+              targetAltitude={cmd.altitude ?? null}
+              targetSpeed={cmd.speed ?? null}
+              targetHeading={cmd.heading ?? null}
+              throttleActive={throttleActive}
+              runwaysMap={runwaysMap}
+              livePosRef={isSelected ? livePosRef : null}
+              onSelect={onSelectAircraft}
+              onLandingComplete={isSelected ? () => { delete activeCommands.current[callsign]?.landing; onLandingComplete?.() } : null}
+              diversionRoute={isSelected ? diversionRoute : null}
+              onDiversionComplete={isSelected ? onDiversionComplete : null}
+            />
         )
       })}
     </>

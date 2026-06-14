@@ -1,52 +1,60 @@
-#include <Stepper.h>
+#include <AccelStepper.h>
 
-// 2048 steps per full 360-degree revolution for 28BYJ-48 in 4-step sequence mode
-const int STEPS_PER_REV = 2048;
+// 4096 steps per full 360-degree revolution for 28BYJ-48 in HALF4WIRE (8-step microstepping)
+// Internal motor: 64 steps/rev in half-step * 64:1 gearbox = 4096 output steps/rev
+const int STEPS_PER_REV = 4096;
 
-// Initialize the stepper library on pins 8, 10, 9, 11 (Note the 8-10-9-11 sequence for ULN2003)
-Stepper myStepper(STEPS_PER_REV, 8, 10, 9, 11);
+// DC motor PWM control on pin 6
+const int DC_MOTOR_PIN = 6;
 
-int currentSteps = 0; // Tracks the current step location of the stepper motor (0 - 2047)
+// AccelStepper with HALF4WIRE driver for microstepping (8-step sequence)
+// Pin order matches ULN2003 driver board wiring
+AccelStepper stepper(AccelStepper::HALF4WIRE, 8, 10, 9, 11);
 
 void setup() {
   Serial.begin(9600);
-  myStepper.setSpeed(10); // Safe speed for 28BYJ-48 steps
-  
-  // Initialize printed forward marker position
+
+  // DC motor pin
+  pinMode(DC_MOTOR_PIN, OUTPUT);
+  analogWrite(DC_MOTOR_PIN, 0);
+
+  // Max speed: 600 steps/sec = ~8.8 RPM output at 4096 steps/rev
+  stepper.setMaxSpeed(600);
+
+  // Acceleration ramp prevents jerk / oscillation
+  stepper.setAcceleration(400);
+
   Serial.println("CONSOLE_BEARING:0.00");
 }
 
 void loop() {
-  if (Serial.available() > 0) {
+  while (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     input.trim();
-    
+
     if (input.startsWith("STEPS:")) {
       int targetSteps = input.substring(6).toInt();
-      
-      // Make sure the target is bounded inside a single revolution
-      targetSteps = (targetSteps % STEPS_PER_REV + STEPS_PER_REV) % STEPS_PER_REV;
-      
-      // Calculate the shortest path difference (handling 360 wrap-arounds)
-      int stepDifference = targetSteps - currentSteps;
-      if (stepDifference > STEPS_PER_REV / 2) {
-        stepDifference -= STEPS_PER_REV;
-      } else if (stepDifference < -STEPS_PER_REV / 2) {
-        stepDifference += STEPS_PER_REV;
-      }
-      
-      // Move the motor
-      if (stepDifference != 0) {
-        myStepper.step(stepDifference);
-        currentSteps = targetSteps;
-      }
-      
-      // Calculate and print true 0-360 console bearing back to serial output
-      float currentBearing = ((float)currentSteps / STEPS_PER_REV) * 360.0;
-      if (currentBearing < 0) currentBearing += 360.0;
-      
+
+      targetSteps = ((targetSteps % STEPS_PER_REV) + STEPS_PER_REV) % STEPS_PER_REV;
+
+      long currentPos = stepper.currentPosition();
+      int currentInRange = ((currentPos % STEPS_PER_REV) + STEPS_PER_REV) % STEPS_PER_REV;
+      int diff = targetSteps - currentInRange;
+      if (diff > STEPS_PER_REV / 2) diff -= STEPS_PER_REV;
+      else if (diff < -STEPS_PER_REV / 2) diff += STEPS_PER_REV;
+
+      stepper.move(diff);
+
+      float bearing = ((float)targetSteps / STEPS_PER_REV) * 360.0;
       Serial.print("CONSOLE_BEARING:");
-      Serial.println(currentBearing);
+      Serial.println(bearing);
+
+    } else if (input.startsWith("SPEED:")) {
+      int pwm = input.substring(6).toInt();
+      pwm = constrain(pwm, 0, 255);
+      analogWrite(DC_MOTOR_PIN, pwm);
     }
   }
+
+  stepper.run();
 }

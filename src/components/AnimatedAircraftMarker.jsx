@@ -128,7 +128,9 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
       const steerDiff = ((currentBrgToFAF - fHdg + 540) % 360) - 180
       const maxTurn = SIM_TURN_RATE_DEG_S * SIM_DT
       const hdgApply = Math.sign(steerDiff) * Math.min(Math.abs(steerDiff), maxTurn)
+      const prevF = fHdg
       fHdg = (fHdg + hdgApply + 360) % 360
+      console.log(`[HEADING] direct-to-faf  f=${f}  steer=${steerDiff.toFixed(1)}  ${prevF.toFixed(1)} → ${fHdg.toFixed(1)}`)
 
       const nextPos = movePos(fLat, fLon, fHdg, stepM)
       fLat = nextPos.lat
@@ -150,7 +152,9 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
 
   for (let s = 0; s < 270; s++) {
     const hdgChange = SIM_TURN_RATE_DEG_S * SIM_DT * optimalSideTurnDir
+    const prevB = bHdg
     bHdg = (bHdg - hdgChange + 360) % 360
+    console.log(`[HEADING] backward-prop  s=${s}  hdgChange=${hdgChange.toFixed(1)}  ${prevB.toFixed(1)} → ${bHdg.toFixed(1)}`)
     const backMoveHdg = (bHdg + 180) % 360
     const nextPos = movePos(bLat, bLon, backMoveHdg, stepM)
     bLat = nextPos.lat
@@ -199,8 +203,10 @@ function buildApproachWaypoints(planeLat, planeLon, planeHdg, runway) {
       break
     }
 
+    const prevFwd = fHdg
     const maxTurn = SIM_TURN_RATE_DEG_S * SIM_DT
     fHdg = (fHdg + (chosenAircraftTurnDir * maxTurn) + 360) % 360
+    console.log(`[HEADING] forward-prop   f=${f}  forced=${isInitialArcForced}  closestBackIdx=${closestBackIdx}  minDiff=${minDiff.toFixed(2)}  ${prevFwd.toFixed(1)} → ${fHdg.toFixed(1)}`)
 
     const nextPos = movePos(fLat, fLon, fHdg, stepM)
     fLat = nextPos.lat
@@ -275,7 +281,7 @@ const makePlaneIcon = (isSelected, landing) => {
 const extrapolate = (state, now) => {
   const elapsed = Math.max(0, (now - state.updatedAt) / 1000)
   if (!state.velocity || !state.heading || elapsed === 0) return { lat: state.lat, lon: state.lon }
-  return movePos(state.lat, state.lon, state.heading, state.velocity * elapsed)
+  return movePos(state.lat, state.lon, state.heading, state.velocity * (state.speedMult ?? 1) * elapsed)
 }
 
 const getDisplayPos = (state, now) => {
@@ -290,7 +296,8 @@ const getDisplayPos = (state, now) => {
 }
 
 export default function AnimatedAircraftMarker({
-  craft, isSelected, landingTarget, runwaysMap, livePosRef, onSelect, onLandingComplete,
+  craft, isSelected, landingTarget, runwaysMap, livePosRef, onSelect, onLandingComplete, throttleActive,
+  diversionRoute, onDiversionComplete,
 }) {
   const markerRef        = useRef(null)
   const onSelectRef      = useRef(onSelect)
@@ -300,8 +307,10 @@ export default function AnimatedAircraftMarker({
   const livePosRefRef    = useRef(livePosRef)
   const onLandingRef     = useRef(onLandingComplete)
   const isSelectedRef    = useRef(isSelected)
+  const throttleActiveRef = useRef(throttleActive)
   const lastStepperHdg   = useRef(-999)   
   const lastStepperTime  = useRef(0)      
+  const onDivertRef      = useRef(onDiversionComplete)
 
   useEffect(() => { onSelectRef.current   = onSelect         }, [onSelect])
   useEffect(() => { craftRef.current      = craft            }, [craft])
@@ -310,6 +319,27 @@ export default function AnimatedAircraftMarker({
   useEffect(() => { livePosRefRef.current = livePosRef       }, [livePosRef])
   useEffect(() => { onLandingRef.current  = onLandingComplete }, [onLandingComplete])
   useEffect(() => { isSelectedRef.current = isSelected       }, [isSelected])
+  useEffect(() => { throttleActiveRef.current = throttleActive }, [throttleActive])
+  useEffect(() => { onDivertRef.current   = onDiversionComplete }, [onDiversionComplete])
+  useEffect(() => { stateRef.current.speedMult = throttleActive ? 3 : 1 }, [throttleActive])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (diversionRoute && diversionRoute.length > 0) {
+      const now = Date.now()
+      const cur = getDisplayPos(state, now)
+      state.diverting = true
+      state.divWps   = diversionRoute
+      state.divIdx   = 0
+      state.cLat     = cur.lat
+      state.cLon     = cur.lon
+      state.divSpeed = state.velocity ?? 250 * 0.51444
+    } else {
+      state.diverting = false
+      state.divWps   = []
+      state.divIdx   = 0
+    }
+  }, [diversionRoute])
 
   const handleClick = useRef(() => onSelectRef.current?.(craftRef.current)).current
 
@@ -335,21 +365,28 @@ export default function AnimatedAircraftMarker({
     landPhase:   'cruise',
     cLat:        craft.lat,
     cLon:        craft.lon,
+    speedMult:   1,
+    diverting: false,
+    divWps:   [],
+    divIdx:   0,
+    divSpeed: 0,
   })
 
   useEffect(() => {
     const state = stateRef.current, now = Date.now()
-    const cur = getDisplayPos(state, now)
-    const d   = distM(cur.lat, cur.lon, craft.lat, craft.lon)
-    if (d > 15) {
-      state.correcting = true; state.corrFrom = cur
-      state.corrTo = { lat: craft.lat, lon: craft.lon }; state.corrStart = now
-    } else {
-      state.correcting = false; state.lat = craft.lat; state.lon = craft.lon; state.updatedAt = now
+    if (!state.diverting) {
+      const cur = getDisplayPos(state, now)
+      const d   = distM(cur.lat, cur.lon, craft.lat, craft.lon)
+      if (d > 15) {
+        state.correcting = true; state.corrFrom = cur
+        state.corrTo = { lat: craft.lat, lon: craft.lon }; state.corrStart = now
+      } else {
+        state.correcting = false; state.lat = craft.lat; state.lon = craft.lon; state.updatedAt = now
+      }
     }
     state.heading  = craft.heading
     state.velocity = craft.velocity
-    if (!state.landing && craft.baroAlt != null) state.landAlt = craft.baroAlt
+    if (!state.landing && !state.diverting && craft.baroAlt != null) state.landAlt = craft.baroAlt
   }, [craft.lat, craft.lon, craft.heading, craft.velocity])
 
   useEffect(() => {
@@ -362,6 +399,13 @@ export default function AnimatedAircraftMarker({
 
     const now = Date.now()
     const cur = getDisplayPos(state, now)
+    const vel = state.velocity ?? 0
+    if (vel < 3) {
+      console.warn(`[LAND] Cannot land — aircraft speed is ${vel.toFixed(1)} m/s (on ground)`)
+      state.landing = false; state.runway = null; state.waypoints = []; state.wpIdx = 0
+      setPathVis(null)
+      return
+    }
     const runway = pickRunway(runwaysMap, landingTarget.airport, cur.lat, cur.lon)
     if (!runway) return
 
@@ -400,7 +444,33 @@ export default function AnimatedAircraftMarker({
 
       let pos
 
-      if (state.landing && state.waypoints.length > 0) {
+      if (state.diverting && state.divWps.length > 0) {
+        state.divSpeed = lerpSpeed(state.divSpeed, state.velocity ?? 250 * 0.51444, dt, 2)
+        let budget = state.divSpeed * (state.speedMult ?? 1) * dt
+        while (budget > 0 && state.divIdx < state.divWps.length) {
+          const tgt = state.divWps[state.divIdx]
+          const segDist = distM(state.cLat, state.cLon, tgt[0], tgt[1])
+          const segBrg = calcBearing(state.cLat, state.cLon, tgt[0], tgt[1])
+          state.commandedHeading = segBrg
+          if (segDist <= budget) {
+            state.cLat = tgt[0]; state.cLon = tgt[1]
+            budget -= segDist
+            state.divIdx++
+          } else {
+            const moved = movePos(state.cLat, state.cLon, segBrg, budget)
+            state.cLat = moved.lat; state.cLon = moved.lon
+            budget = 0
+          }
+        }
+        pos = { lat: state.cLat, lon: state.cLon }
+        if (state.divIdx >= state.divWps.length) {
+          state.diverting = false
+          state.divWps   = []
+          state.divIdx   = 0
+          if (onDivertRef.current) onDivertRef.current()
+        }
+
+      } else if (state.landing && state.waypoints.length > 0) {
         const runway = state.runway
         const threshold = runway ? { lat: runway.tLat, lon: runway.tLon } : null
         const toThreshold = threshold ? distM(state.cLat, state.cLon, threshold.lat, threshold.lon) : 0
@@ -435,7 +505,9 @@ export default function AnimatedAircraftMarker({
             const tgt     = state.waypoints[state.wpIdx]
             const segDist = distM(state.cLat, state.cLon, tgt.lat, tgt.lon)
             const segBrg  = calcBearing(state.cLat, state.cLon, tgt.lat, tgt.lon)
+            const prevCmd = state.commandedHeading
             state.commandedHeading = segBrg
+            if (Math.abs(prevCmd - segBrg) > 0.01) console.log(`[HEADING] wp-follower    wpIdx=${state.wpIdx}  segDist=${segDist.toFixed(0)}  ${prevCmd.toFixed(1)} → ${segBrg.toFixed(1)}`)
             if (segDist <= budget) {
               state.cLat = tgt.lat; state.cLon = tgt.lon
               budget -= segDist
@@ -457,10 +529,16 @@ export default function AnimatedAircraftMarker({
 
       } else {
         pos = getDisplayPos(state, now)
-        if (state.heading != null) state.commandedHeading = state.heading
+        if (state.heading != null) {
+          const prevCmd = state.commandedHeading
+          state.commandedHeading = state.heading
+          if (Math.abs(prevCmd - state.heading) > 0.01) console.log(`[HEADING] adsb-path      ${prevCmd.toFixed(1)} → ${state.heading.toFixed(1)}`)
+        }
       }
 
+      const prevDisp = state.displayHeading
       state.displayHeading = lerpAngle(state.displayHeading, state.commandedHeading, 0.12)
+      if (Math.abs(prevDisp - state.displayHeading) > 0.01) console.log(`[HEADING] display-lerp   ${prevDisp.toFixed(1)} → ${state.displayHeading.toFixed(1)}  (cmd=${state.commandedHeading.toFixed(1)})`)
       marker.setLatLng([pos.lat, pos.lon])
 
       // Stream full 0-360 true heading to the stepper architecture via WebSocket
@@ -469,7 +547,8 @@ export default function AnimatedAircraftMarker({
         const elapsed = now - lastStepperTime.current
         
         // Check for directional changes
-        if (elapsed >= 30 && Math.abs(hdg - lastStepperHdg.current) >= 0.1) {
+        if (elapsed >= 500 && Math.abs(hdg - lastStepperHdg.current) >= 1.0) {
+          console.log(`[HEADING] heading_update  sent hdg=${hdg}  elapsed=${elapsed}ms  delta=${(hdg - lastStepperHdg.current).toFixed(1)}`)
           send({ type: 'heading_update', heading: hdg })
           lastStepperHdg.current  = hdg
           lastStepperTime.current = now

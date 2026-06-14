@@ -7,7 +7,7 @@ import { StateMachine }   from './stateMachine.js'
 import { parseCommand, commandToReadback } from './services/commandParser.js'
 import { scoreRoutes }   from './services/routeScorer.js'
 import { speak, getLatestAudio } from './services/ttsService.js'
-import { sendBearing, initServo, testServo } from './services/servoController.js'
+import { sendBearing, sendSpeed, initServo, testServo } from './services/servoController.js'
 import { checkRouteIntersections, NO_FLY_ZONES } from './services/noFlyZones.js'
 import { AIRPORTS }       from './data/airports.js'
 import type { S2C, C2S, Command, ScoredRoute, LogEntry } from './types.js'
@@ -228,6 +228,19 @@ async function processTranscript(text: string) {
     return
   }
 
+  if (cmd.type === 'throttle_up' || cmd.type === 'throttle_down') {
+    const label = cmd.type === 'throttle_up' ? 'Throttle up' : 'Throttle down'
+    const readbackEn = `${label}. Confirm to proceed.`
+    const { translated } = await speak(readbackEn, currentLang)
+    broadcast({ type: 'readback', english: readbackEn, translated, lang: currentLang })
+    broadcast({ type: 'tts_ready' })
+    pendingCommand = cmd
+    const logId = Date.now().toString(); pendingLogId = logId
+    logEntry({ id: logId, timestamp: timestamp(), commandType: label.toUpperCase().replace(' ', '_'), display: label, status: 'pending', confidence: parsed.confidence })
+    sm.transition('AWAITING_CONFIRMATION')
+    return
+  }
+
   const { translated } = await speak('Command not understood. Please repeat.', currentLang)
   broadcast({ type: 'readback', english: 'Command not understood. Please repeat.', translated, lang: currentLang })
   broadcast({ type: 'tts_ready' })
@@ -265,6 +278,16 @@ async function handleConfirm() {
       lon: apData?.lon ?? -79.6248,
     })
     runLandingSequence(cmd.airport, cmd.runway).catch(console.error)
+  } else if (cmd.type === 'throttle_up') {
+    sendSpeed(255)
+    broadcast({ type: 'throttle_execute', active: true })
+    await delay(500)
+    sm.transition('IDLE')
+  } else if (cmd.type === 'throttle_down') {
+    sendSpeed(0)
+    broadcast({ type: 'throttle_execute', active: false })
+    await delay(500)
+    sm.transition('IDLE')
   } else {
     // FIXED: Pitch argument removed
     sendBearing(0)
@@ -348,7 +371,6 @@ wss.on('connection', (ws) => {
         if (typeof msg.heading === 'number') {
           const now = Date.now()
           if (now - lastLiveHeadingSend >= LIVE_HEADING_MIN_INTERVAL_MS) {
-            // FIXED: Pitch argument removed
             sendBearing(msg.heading)
             lastLiveHeadingSend = now
 
